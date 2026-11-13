@@ -5,10 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>html preview</title>
 <script>
-  // If ?html= is non-empty, replace this whole document with it.
+  // If ?html= (or #html=) is non-empty, replace this whole document with it.
+  // The # form never leaves the browser, so servers and proxies can't reject it.
   // Wrapped in a block so no globals leak into the rendered document.
   {
-    const html = new URLSearchParams(location.search).get("html");
+    const html =
+      new URLSearchParams(location.search).get("html") ||
+      new URLSearchParams(location.hash.slice(1)).get("html");
+    // pasting a #html= url while this page is open changes only the hash - reload to render it
+    addEventListener("hashchange", () => location.reload());
     if (html) {
       // hide the form so it never flashes
       document.documentElement.style.display = "none";
@@ -34,6 +39,7 @@
   <p>
     <button id="copy-encoded">copy encoded</button>
     <button id="copy-url">copy url</button>
+    <button id="copy-hash-url">copy # url</button>
     <output id="status"></output>
   </p>
 </fieldset>
@@ -42,7 +48,7 @@
     const src = document.getElementById("src");
     const status = document.getElementById("status");
     const encoded = () => encodeURIComponent(src.value);
-    const url = () => location.origin + location.pathname + "?html=" + encoded();
+    const url = (sep) => location.origin + location.pathname + sep + "html=" + encoded();
 
     const copy = async (text) => {
       if (!src.value) return (status.textContent = "nothing to copy");
@@ -61,7 +67,8 @@
     };
 
     document.getElementById("copy-encoded").onclick = () => copy(encoded());
-    document.getElementById("copy-url").onclick = () => copy(url());
+    document.getElementById("copy-url").onclick = () => copy(url("?"));
+    document.getElementById("copy-hash-url").onclick = () => copy(url("#"));
   }
 </script>
 </body>
