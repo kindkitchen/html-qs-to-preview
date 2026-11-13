@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>html preview</title>
+<script>
+  // If ?html= is non-empty, replace this whole document with it.
+  // Wrapped in a block so no globals leak into the rendered document.
+  {
+    const html = new URLSearchParams(location.search).get("html");
+    if (html) {
+      // hide the form so it never flashes
+      document.documentElement.style.display = "none";
+      // document.open() only wipes the page once our own parsing has finished
+      addEventListener("DOMContentLoaded", () => {
+        document.open();
+        document.write(html);
+        document.close();
+      });
+    }
+  }
+</script>
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: system-ui, sans-serif; }
+  fieldset { width: min(90vw, 40rem); }
+  textarea { width: 100%; height: 40vh; box-sizing: border-box; font-family: monospace; }
+</style>
+</head>
+<body>
+<fieldset>
+  <legend>html &rarr; url</legend>
+  <textarea id="src" placeholder="paste html document here" autofocus></textarea>
+  <p>
+    <button id="copy-encoded">copy encoded</button>
+    <button id="copy-url">copy url</button>
+    <output id="status"></output>
+  </p>
+</fieldset>
+<script>
+  {
+    const src = document.getElementById("src");
+    const status = document.getElementById("status");
+    const encoded = () => encodeURIComponent(src.value);
+    const url = () => location.origin + location.pathname + "?html=" + encoded();
+
+    const copy = async (text) => {
+      if (!src.value) return (status.textContent = "nothing to copy");
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        // clipboard api is unavailable (e.g. plain http) - fall back to the old way
+        const t = document.createElement("textarea");
+        t.value = text;
+        document.body.append(t);
+        t.select();
+        document.execCommand("copy");
+        t.remove();
+      }
+      status.textContent = "copied, " + text.length + " chars";
+    };
+
+    document.getElementById("copy-encoded").onclick = () => copy(encoded());
+    document.getElementById("copy-url").onclick = () => copy(url());
+  }
+</script>
+</body>
+</html>
