@@ -5,23 +5,34 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>html preview</title>
 <script>
-  // If ?html= (or #html=) is non-empty, replace this whole document with it.
-  // The # form never leaves the browser, so servers and proxies can't reject it.
+  // ?html=... : the page itself becomes that document (the url is sent to the server).
+  // #html=... : the document is shown in a full-page frame. The fragment never leaves the
+  //             browser, so there is no size limit, and the document can use its own
+  //             #hash and history without wiping itself out of the address bar.
   // Wrapped in a block so no globals leak into the rendered document.
   {
-    const html =
-      new URLSearchParams(location.search).get("html") ||
-      new URLSearchParams(location.hash.slice(1)).get("html");
+    const param = (s) => new URLSearchParams(s).get("html");
+    const query = param(location.search);
+    const hash = query ? null : param(location.hash.slice(1));
     // pasting a #html= url while this page is open changes only the hash - reload to render it
     addEventListener("hashchange", () => location.reload());
-    if (html) {
+    if (query || hash) {
       // hide the form so it never flashes
       document.documentElement.style.display = "none";
-      // document.open() only wipes the page once our own parsing has finished
+      // wait until our own parsing has finished
       addEventListener("DOMContentLoaded", () => {
-        document.open();
-        document.write(html);
-        document.close();
+        if (query) {
+          document.open(); // wipes this page, listeners included
+          document.write(query);
+          document.close();
+          return;
+        }
+        const frame = document.createElement("iframe");
+        frame.src = URL.createObjectURL(new Blob([hash], { type: "text/html;charset=utf-8" }));
+        frame.style.cssText = "position:fixed;inset:0;width:100%;height:100%;border:0";
+        frame.onload = () => (document.title = frame.contentDocument.title || document.title);
+        document.body.replaceChildren(frame);
+        document.documentElement.style.display = "";
       });
     }
   }
@@ -38,8 +49,8 @@
   <textarea id="src" placeholder="paste html document here" autofocus></textarea>
   <p>
     <button id="copy-encoded">copy encoded</button>
-    <button id="copy-url">copy url</button>
-    <button id="copy-hash-url">copy # url</button>
+    <button id="copy-url" title="?html=... the page becomes the document; the url is sent to the server, so keep it small">copy url</button>
+    <button id="copy-hash-url" title="#html=... the document is shown in a full-page frame; never sent to the server, any size">copy # url</button>
     <output id="status"></output>
   </p>
 </fieldset>
