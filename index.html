@@ -5,33 +5,47 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>html preview</title>
 <script>
-  // ?html=... : the page itself becomes that document (the url is sent to the server).
-  // #html=... : the document is shown in a full-page frame. The fragment never leaves the
-  //             browser, so there is no size limit, and the document can use its own
-  //             #hash and history without wiping itself out of the address bar.
-  // Wrapped in a block so no globals leak into the rendered document.
+  // Everything is read from the part of the address after #, which never leaves the browser:
+  //   #url-with-raw-html=...  address of a file with raw html: tried first
+  //   #html=...               the html itself: used when there is no address, or it can't be loaded
+  // With neither, or when nothing could be shown, the form below stays.
+  // The document is shown in a full-page frame, so it can use its own #hash and history.
   {
-    const param = (s) => new URLSearchParams(s).get("html");
-    const query = param(location.search);
-    const hash = query ? null : param(location.hash.slice(1));
-    // pasting a #html= url while this page is open changes only the hash - reload to render it
+    const params = new URLSearchParams(location.hash.slice(1));
+    const url = params.get("url-with-raw-html");
+    const html = params.get("html");
+    // a link pasted while this page is open changes only the hash - reload to show it
     addEventListener("hashchange", () => location.reload());
-    if (query || hash) {
+    if (url || html) {
       // hide the form so it never flashes
       document.documentElement.style.display = "none";
-      // wait until our own parsing has finished
-      addEventListener("DOMContentLoaded", () => {
-        if (query) {
-          document.open(); // wipes this page, listeners included
-          document.write(query);
-          document.close();
-          return;
+      addEventListener("DOMContentLoaded", async () => {
+        let doc = "", error = "";
+        if (url) {
+          try {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error("http " + res.status);
+            doc = await res.text();
+          } catch (e) {
+            error = e.message;
+          }
         }
-        const frame = document.createElement("iframe");
-        frame.src = URL.createObjectURL(new Blob([hash], { type: "text/html;charset=utf-8" }));
-        frame.style.cssText = "position:fixed;inset:0;width:100%;height:100%;border:0";
-        frame.onload = () => (document.title = frame.contentDocument.title || document.title);
-        document.body.replaceChildren(frame);
+        doc = doc || html;
+        if (doc) {
+          const frame = document.createElement("iframe");
+          frame.src = URL.createObjectURL(new Blob([doc], { type: "text/html;charset=utf-8" }));
+          frame.style.cssText = "position:fixed;inset:0;width:100%;height:100%;border:0";
+          frame.onload = () => (document.title = frame.contentDocument.title || document.title);
+          document.body.replaceChildren(frame);
+        } else {
+          // nothing to show: back to the form, with the address that failed
+          const failed = document.getElementById("failed");
+          failed.textContent = "could not load " + url + ": " + (error || "it is empty");
+          failed.hidden = false;
+          const input = document.getElementById("raw-url");
+          input.value = url;
+          input.dispatchEvent(new Event("input"));
+        }
         document.documentElement.style.display = "";
       });
     }
@@ -39,30 +53,49 @@
 </script>
 <style>
   body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: system-ui, sans-serif; }
-  fieldset { width: min(90vw, 40rem); }
-  textarea { width: 100%; height: 40vh; box-sizing: border-box; font-family: monospace; }
+  main { display: grid; gap: 1rem; width: min(90vw, 40rem); padding: 1rem 0; }
+  fieldset { min-width: 0; margin: 0; }
+  textarea, input { width: 100%; box-sizing: border-box; font-family: monospace; }
+  textarea { height: 40vh; }
+  p { margin: .5rem 0 0; }
+  a { word-break: break-all; }
 </style>
 </head>
 <body>
-<fieldset>
-  <legend>html &rarr; url</legend>
-  <textarea id="src" placeholder="paste html document here" autofocus></textarea>
-  <p>
-    <button id="copy-encoded">copy encoded</button>
-    <button id="copy-url" title="?html=... the page becomes the document; the url is sent to the server, so keep it small">copy url</button>
-    <button id="copy-hash-url" title="#html=... the document is shown in a full-page frame; never sent to the server, any size">copy # url</button>
-    <output id="status"></output>
-  </p>
-</fieldset>
+<main>
+  <p id="failed" role="alert" hidden></p>
+  <fieldset>
+    <legend>html &rarr; url</legend>
+    <textarea id="src" placeholder="paste html document here" autofocus></textarea>
+    <p>
+      <button id="copy-encoded">copy encoded</button>
+      <button id="copy-url">copy url</button>
+      <output id="status"></output>
+    </p>
+  </fieldset>
+  <fieldset>
+    <legend>url of raw html &rarr; url</legend>
+    <input id="raw-url" type="url" placeholder="https://raw.githubusercontent.com/user/repo/main/page.html">
+    <p><small>
+      Address of a file whose content is raw html. The browser loads it every time the link is
+      opened, so the link stays short and always shows the current file. Its server must allow
+      requests from other sites (CORS); raw.githubusercontent.com does.
+    </small></p>
+    <p><output id="raw-link"></output></p>
+    <p>
+      <button id="copy-raw-url">copy url</button>
+      <output id="raw-status"></output>
+    </p>
+  </fieldset>
+</main>
 <script>
   {
-    const src = document.getElementById("src");
-    const status = document.getElementById("status");
-    const encoded = () => encodeURIComponent(src.value);
-    const url = (sep) => location.origin + location.pathname + sep + "html=" + encoded();
+    const $ = (id) => document.getElementById(id);
+    const page = new URL(location.pathname, location.href).href;
+    const link = (name, value) => page + "#" + name + "=" + encodeURIComponent(value);
 
-    const copy = async (text) => {
-      if (!src.value) return (status.textContent = "nothing to copy");
+    const copy = async (text, status, why) => {
+      if (!text) return (status.textContent = why);
       try {
         await navigator.clipboard.writeText(text);
       } catch {
@@ -77,9 +110,31 @@
       status.textContent = "copied, " + text.length + " chars";
     };
 
-    document.getElementById("copy-encoded").onclick = () => copy(encoded());
-    document.getElementById("copy-url").onclick = () => copy(url("?"));
-    document.getElementById("copy-hash-url").onclick = () => copy(url("#"));
+    // html -> url
+    const src = $("src");
+    $("copy-encoded").onclick = () => copy(src.value && encodeURIComponent(src.value), $("status"), "nothing to copy");
+    $("copy-url").onclick = () => copy(src.value && link("html", src.value), $("status"), "nothing to copy");
+
+    // url of raw html -> url
+    const raw = $("raw-url");
+    const rawLink = () => {
+      try {
+        const url = new URL(raw.value.trim());
+        if (url.protocol === "https:" || url.protocol === "http:") return link("url-with-raw-html", url.href);
+      } catch {}
+      return "";
+    };
+    raw.oninput = () => {
+      const made = rawLink(), out = $("raw-link");
+      $("raw-status").textContent = "";
+      out.replaceChildren();
+      if (!raw.value.trim()) return;
+      if (!made) return (out.textContent = "not a valid http(s) url");
+      const a = document.createElement("a");
+      a.href = a.textContent = made;
+      out.append(a);
+    };
+    $("copy-raw-url").onclick = () => copy(rawLink(), $("raw-status"), raw.value.trim() ? "not a valid http(s) url" : "nothing to copy");
   }
 </script>
 </body>
